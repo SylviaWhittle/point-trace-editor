@@ -21,7 +21,14 @@ class PointTraceEditor:
         self.point_colour = "black"
         self.point_line_colour = "black"
         self.point_text_colour = "black"
+        self.point_dragging_colour = "red"
         self.point_radius = 3
+        
+        # drag state tracking
+        self.dragging = False
+        self.drag_point_index = None
+        self.drag_start_x = 0
+        self.drag_start_y = 0
 
         # Create main frame - to hold all widgets
         main_frame = ttk.Frame(main_window, padding="10")
@@ -52,6 +59,9 @@ class PointTraceEditor:
         )
         # Bind left mouse to click event
         self.canvas.bind("<Button-1>", self.on_canvas_click)
+        # Bind mouse motion and release for dragging
+        self.canvas.bind("<B1-Motion>", self.on_canvas_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_canvas_release)
 
         # buttons frame
         buttons_frame = ttk.Frame(main_frame)
@@ -100,18 +110,57 @@ class PointTraceEditor:
 
     def on_canvas_click(self, event):
         """Run whenever the canvas is clicked."""
-        # Create new point at position
         x, y = event.x, event.y
+        
+        # Check if clicking on an existing point
+        clicked_point_index = self.find_point_at_position(x, y)
+        
+        if clicked_point_index is not None:
+            # Start dragging existing point
+            self.dragging = True
+            self.drag_point_index = clicked_point_index
+            self.drag_start_x = x
+            self.drag_start_y = y
+            self.status_var.set(f"Dragging point {clicked_point_index + 1}")
+        else:
+            # Create new point at position
+            self.points.append((x, y))
+            self.redraw_canvas()
+            self.update_terminal()
+            self.status_var.set(f"Point {len(self.points)} placed at ({x}, {y})")
 
-        # Add point to list
-        self.points.append((x, y))
+    def on_canvas_drag(self, event):
+        """Handle mouse drag events."""
+        if self.dragging and self.drag_point_index is not None:
+            # Update the position of the dragged point
+            x, y = event.x, event.y
+            self.points[self.drag_point_index] = (x, y)
+            self.redraw_canvas()
+            self.status_var.set(f"Moving point {self.drag_point_index + 1} to ({x}, {y})")
 
-        # Redraw everything (points and lines)
-        self.redraw_canvas()
+    def on_canvas_release(self, event):
+        """Handle mouse release events."""
+        if self.dragging:
+            x, y = event.x, event.y
+            self.points[self.drag_point_index] = (x, y)
+            self.redraw_canvas()
+            self.update_terminal()
+            self.status_var.set(f"Point {self.drag_point_index + 1} moved to ({x}, {y})")
+            
+            # Reset drag state
+            self.dragging = False
+            self.drag_point_index = None
 
-        # Update displays
-        self.update_terminal()
-        self.status_var.set(f"Point {len(self.points)} placed at ({x}, {y})")
+    def find_point_at_position(self, x, y):
+        """Find if there's a point at the given position (within click radius)."""
+        click_radius = self.point_radius + 5  # A bit larger than the visual radius
+        
+        for i, (px, py) in enumerate(self.points):
+            # Calculate distance from click to point center
+            distance = ((x - px) ** 2 + (y - py) ** 2) ** 0.5
+            if distance <= click_radius:
+                return i
+        return None
 
     def clear_points(self):
         """Clear all placed points."""
@@ -134,14 +183,19 @@ class PointTraceEditor:
 
         # Draw all points
         for i, (x, y) in enumerate(self.points, 1):
+            # Determine point color (highlight if being dragged)
+            point_color = self.point_dragging_colour if (self.dragging and self.drag_point_index == i - 1) else self.point_colour
+            point_outline = "black"
+            
             # Draw point circle
             self.canvas.create_oval(
                 x - self.point_radius,
                 y - self.point_radius,
                 x + self.point_radius,
                 y + self.point_radius,
-                fill=self.point_colour,
-                width=1,
+                fill=point_color,
+                outline=point_outline,
+                width=2 if (self.dragging and self.drag_point_index == i - 1) else 1,
             )
 
             # Add point number label
