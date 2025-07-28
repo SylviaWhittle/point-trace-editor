@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""TKinter editor for point traces"""
+
+import tkinter as tk
+from tkinter import ttk, messagebox
+import pyperclip
+
+
+class PointTraceEditor:
+    """Class for management of point trace rendering and editing."""
+
+    def __init__(self, main_window):
+        # Create main window
+        self.main_window = main_window
+        self.main_window.title("Point Trace Editor")
+        self.main_window.geometry("800x700")
+
+        # list to store points
+        self.points = []
+        # drawing options for points
+        self.point_colour = "black"
+        self.point_line_colour = "black"
+        self.point_text_colour = "black"
+        self.point_radius = 3
+
+        # Create main frame - to hold all widgets
+        main_frame = ttk.Frame(main_window, padding="10")
+        # Set up a grid layout for the main frame
+        # Sticky with all directions means the frame will expand to fill the window
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+
+        # Configure grid weights - allows expansion when the window is resized
+        main_window.columnconfigure(0, weight=1)
+        main_window.rowconfigure(0, weight=1)
+        main_frame.columnconfigure(1, weight=1)
+        main_frame.rowconfigure(1, weight=1)
+
+        # Title - a label at the top of the main frame
+        title_label = ttk.Label(
+            main_frame, text="Point Trace Editor", font=("Arial", 16, "bold")
+        )
+        # Grid the title label to span two columns. pady adds vertical gaps.
+        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 10))
+
+        # Canvas for drawing points
+        self.canvas = tk.Canvas(
+            main_frame, bg="grey", width=600, height=400, relief="sunken", bd=2
+        )
+        # Create a grid layout for the canvas, so it can be resized with the window.
+        self.canvas.grid(
+            row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10)
+        )
+        # Bind left mouse to click event
+        self.canvas.bind("<Button-1>", self.on_canvas_click)
+
+        # buttons frame
+        buttons_frame = ttk.Frame(main_frame)
+        buttons_frame.grid(
+            row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10)
+        )
+
+        # Buttons
+        ttk.Button(
+            buttons_frame, text="Clear All Points", command=self.clear_points
+        ).grid(row=0, column=0, padx=(0, 5))
+        ttk.Button(
+            buttons_frame, text="Copy Coordinates", command=self.copy_coordinates
+        ).grid(row=0, column=1, padx=5)
+
+        # Coordinates display frame. padding adds space around the frame.
+        coord_frame = ttk.LabelFrame(main_frame, text="Coordinates", padding="10")
+        coord_frame.grid(
+            row=3, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10)
+        )
+        coord_frame.columnconfigure(0, weight=1)
+        coord_frame.rowconfigure(0, weight=1)
+
+        # Text widget for displaying coordinates
+        self.terminal_text = tk.Text(coord_frame, height=8, width=70, wrap=tk.WORD)
+        self.terminal_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+
+        # Scrollbar for text widget
+        scrollbar = ttk.Scrollbar(
+            coord_frame, orient="vertical", command=self.terminal_text.yview
+        )
+        scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        self.terminal_text.configure(yscrollcommand=scrollbar.set)
+
+        # Status bar
+        self.status_var = tk.StringVar()
+        self.status_var.set("Ready - Click on the canvas to place points")
+        status_bar = ttk.Label(
+            main_frame, textvariable=self.status_var, relief="sunken", anchor="w"
+        )
+        status_bar.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E))
+
+        # initial update of terminal and canvas
+        self.update_terminal()
+        self.redraw_canvas()
+
+    def on_canvas_click(self, event):
+        """Run whenever the canvas is clicked."""
+        # Create new point at position
+        x, y = event.x, event.y
+
+        # Add point to list
+        self.points.append((x, y))
+
+        # Redraw everything (points and lines)
+        self.redraw_canvas()
+
+        # Update displays
+        self.update_terminal()
+        self.status_var.set(f"Point {len(self.points)} placed at ({x}, {y})")
+
+    def clear_points(self):
+        """Clear all placed points."""
+        self.points.clear()
+        self.redraw_canvas()
+        self.update_terminal()
+        self.status_var.set("All points cleared")
+
+    def redraw_canvas(self):
+        """Redraw all points and lines on the canvas."""
+        # Clear the entire canvas
+        self.canvas.delete("all")
+
+        # Draw lines between consecutive points
+        if len(self.points) > 1:
+            for i in range(len(self.points) - 1):
+                x1, y1 = self.points[i]
+                x2, y2 = self.points[i + 1]
+                self.canvas.create_line(x1, y1, x2, y2, fill=self.point_line_colour, width=2)
+
+        # Draw all points
+        for i, (x, y) in enumerate(self.points, 1):
+            # Draw point circle
+            self.canvas.create_oval(
+                x - self.point_radius,
+                y - self.point_radius,
+                x + self.point_radius,
+                y + self.point_radius,
+                fill=self.point_colour,
+                width=1,
+            )
+
+            # Add point number label
+            self.canvas.create_text(
+                x + 10,
+                y - 10,
+                text=str(i),
+                fill=self.point_text_colour,
+                font=("Arial", 8, "bold"),
+            )
+
+    def update_terminal(self):
+        """Update the terminal text widget."""
+        self.terminal_text.delete(1.0, tk.END)
+
+        if not self.points:
+            self.terminal_text.insert(
+                tk.END,
+                "No points placed.",
+            )
+            return
+
+        # Display points in a readable format
+        self.terminal_text.insert(tk.END, "Placed Points:\n")
+        self.terminal_text.insert(tk.END, "-" * 40 + "\n")
+
+        for i, (x, y) in enumerate(self.points, 1):
+            self.terminal_text.insert(tk.END, f"Point {i}: ({x}, {y})\n")
+
+        # print copy-ready format
+        self.terminal_text.insert(tk.END, "\n" + "=" * 40 + "\n")
+        self.terminal_text.insert(tk.END, "Copy-ready format:\n")
+        self.terminal_text.insert(tk.END, "-" * 40 + "\n")
+
+        # coordinate list
+        coord_list = ", ".join([f"({x}, {y})" for x, y in self.points])
+        self.terminal_text.insert(tk.END, f"Coordinates: {coord_list}\n\n")
+
+    def copy_coordinates(self):
+        """Copy coordinates to clipboard in simple format."""
+        if not self.points:
+            messagebox.showwarning(
+                "No Points", "No points to copy. Place some points first."
+            )
+            return
+
+        coord_list = ", ".join([f"({x}, {y})" for x, y in self.points])
+        pyperclip.copy(coord_list)
+        self.status_var.set("Coordinates copied to clipboard!")
+
+
+def main():
+    """Main function to run the application."""
+    # Create main window
+    main_window = tk.Tk()
+    PointTraceEditor(main_window)
+    # Start the main event loop
+    main_window.mainloop()
+
+
+if __name__ == "__main__":
+    main()
