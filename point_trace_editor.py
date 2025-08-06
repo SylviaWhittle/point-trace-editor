@@ -23,13 +23,13 @@ class PointTraceEditor:
         self.point_text_colour = "black"
         self.point_dragging_colour = "red"
         self.point_radius = 3
-        
+
         # drag state tracking
         self.dragging = False
         self.drag_point_index = None
         self.drag_start_x = 0
         self.drag_start_y = 0
-        
+
         # mouse position tracking for delete functionality
         self.mouse_x = 0
         self.mouse_y = 0
@@ -68,7 +68,7 @@ class PointTraceEditor:
         self.canvas.bind("<ButtonRelease-1>", self.on_canvas_release)
         # Bind mouse motion to track cursor position
         self.canvas.bind("<Motion>", self.on_mouse_move)
-        
+
         # Make canvas focusable and bind keyboard events
         self.canvas.focus_set()
         self.canvas.bind("<Key>", self.on_key_press)
@@ -108,7 +108,9 @@ class PointTraceEditor:
 
         # Status bar
         self.status_var = tk.StringVar()
-        self.status_var.set("Ready - Click to place/drag points, press 'd' to delete point near cursor")
+        self.status_var.set(
+            "Click: place/drag points or insert on lines, 'd': delete point near cursor"
+        )
         status_bar = ttk.Label(
             main_frame, textvariable=self.status_var, relief="sunken", anchor="w"
         )
@@ -121,10 +123,10 @@ class PointTraceEditor:
     def on_canvas_click(self, event):
         """Run whenever the canvas is clicked."""
         x, y = event.x, event.y
-        
+
         # Check if clicking on an existing point
         clicked_point_index = self.find_point_at_position(x, y)
-        
+
         if clicked_point_index is not None:
             # Start dragging existing point
             self.dragging = True
@@ -133,11 +135,24 @@ class PointTraceEditor:
             self.drag_start_y = y
             self.status_var.set(f"Dragging point {clicked_point_index + 1}")
         else:
-            # Create new point at position
-            self.points.append((x, y))
-            self.redraw_canvas()
-            self.update_terminal()
-            self.status_var.set(f"Point {len(self.points)} placed at ({x}, {y})")
+            # Check if clicking on a line segment to insert a point
+            line_segment = self.find_line_at_position(x, y)
+
+            if line_segment is not None:
+                # Insert new point between the two points of the line segment
+                insert_index = line_segment + 1
+                self.points.insert(insert_index, (x, y))
+                self.redraw_canvas()
+                self.update_terminal()
+                self.status_var.set(
+                    f"Point inserted at position {insert_index + 1}: ({x}, {y})"
+                )
+            else:
+                # Create new point at end of list
+                self.points.append((x, y))
+                self.redraw_canvas()
+                self.update_terminal()
+                self.status_var.set(f"Point {len(self.points)} placed at ({x}, {y})")
 
     def on_canvas_drag(self, event):
         """Handle mouse drag events."""
@@ -146,7 +161,9 @@ class PointTraceEditor:
             x, y = event.x, event.y
             self.points[self.drag_point_index] = (x, y)
             self.redraw_canvas()
-            self.status_var.set(f"Moving point {self.drag_point_index + 1} to ({x}, {y})")
+            self.status_var.set(
+                f"Moving point {self.drag_point_index + 1} to ({x}, {y})"
+            )
 
     def on_canvas_release(self, event):
         """Handle mouse release events."""
@@ -155,8 +172,10 @@ class PointTraceEditor:
             self.points[self.drag_point_index] = (x, y)
             self.redraw_canvas()
             self.update_terminal()
-            self.status_var.set(f"Point {self.drag_point_index + 1} moved to ({x}, {y})")
-            
+            self.status_var.set(
+                f"Point {self.drag_point_index + 1} moved to ({x}, {y})"
+            )
+
             # Reset drag state
             self.dragging = False
             self.drag_point_index = None
@@ -168,18 +187,20 @@ class PointTraceEditor:
 
     def on_key_press(self, event):
         """Handle keyboard events."""
-        if event.keysym.lower() == 'd':
+        if event.keysym.lower() == "d":
             self.delete_point_at_mouse()
 
     def delete_point_at_mouse(self):
         """Delete point near the current mouse position."""
         point_index = self.find_point_at_position(self.mouse_x, self.mouse_y)
-        
+
         if point_index is not None:
             deleted_point = self.points.pop(point_index)
             self.redraw_canvas()
             self.update_terminal()
-            self.status_var.set(f"Deleted point at ({deleted_point[0]}, {deleted_point[1]})")
+            self.status_var.set(
+                f"Deleted point at ({deleted_point[0]}, {deleted_point[1]})"
+            )
         else:
             self.status_var.set("No point near mouse cursor to delete")
 
@@ -193,6 +214,77 @@ class PointTraceEditor:
             if distance <= click_radius:
                 return i
         return None
+
+    def find_line_at_position(self, x, y):
+        """
+        Return the index of the first point of a point pair that forms a line segment that is near the given
+        position.
+        
+        Parameters:
+        -----------
+        x : int
+            The x-coordinate of the mouse click position.
+        y : int
+            The y-coordinate of the mouse click position.
+        
+        Returns:
+        --------
+        int or None
+            The index of the first point of the line segment if found, otherwise None.
+        """
+        if len(self.points) < 2:
+            return None
+
+        line_click_tolerance = 5
+
+        # Iterate through each point pair combo to find line segments and then check if the cursor is near any
+        # line segments
+        # Note that if there are two line segments that meet this criteria, the first one will be returned.
+        for i in range(len(self.points) - 1):
+            x1, y1 = self.points[i]
+            x2, y2 = self.points[i + 1]
+
+            # Calculate distance from point to line segment
+            if (
+                self.point_to_line_distance(x, y, x1, y1, x2, y2)
+                <= line_click_tolerance
+            ):
+                return i
+        return None
+
+    def point_to_line_distance(self, px, py, x1, y1, x2, y2):
+        """Calculate the shortest distance from a point to a line segment."""
+
+        # To find distance, need to find closest point on the line segment
+        # first, check if the line is of zero length
+        if (x1 == x2) and (y1 == y2):
+            # Line segment is a point, return distance to that point
+            return ((px - x1) ** 2 + (py - y1) ** 2) ** 0.5
+        else:
+            # Find the line segment vector
+            line_vec_x = x2 - x1
+            line_vec_y = y2 - y1
+            # Find the point vector from the start of the line segment
+            point_vec_x = px - x1
+            point_vec_y = py - y1
+            # Calculate the projection of the point vector onto the line segment
+            line_length_squared = line_vec_x**2 + line_vec_y**2
+            dot_product_point_line = point_vec_x * line_vec_x + point_vec_y * line_vec_y
+            # Projection of the point vector P onto the line segment vector L is:
+            # P dot L / ||L||
+            # This will yeild a scalar value that tells us how far along the line segment the point projects,
+            # but this can be negative or greater than the length of the line segment.
+            # If it's negative, then the point lies before the start of the segment, and if it's greater than 1, then
+            # it lies beyong the end of the segment.
+            # So we clamp it.
+            projection = dot_product_point_line / line_length_squared
+            projection = max(0, min(1, projection))
+            # This allows us to find the closest point on the line segment
+            closest_x = x1 + projection * line_vec_x
+            closest_y = y1 + projection * line_vec_y
+            # Now can calculate distance point to closest point on line segment
+            distance = ((px - closest_x) ** 2 + (py - closest_y) ** 2) ** 0.5
+            return distance
 
     def clear_points(self):
         """Clear all placed points."""
@@ -211,14 +303,20 @@ class PointTraceEditor:
             for i in range(len(self.points) - 1):
                 x1, y1 = self.points[i]
                 x2, y2 = self.points[i + 1]
-                self.canvas.create_line(x1, y1, x2, y2, fill=self.point_line_colour, width=2)
+                self.canvas.create_line(
+                    x1, y1, x2, y2, fill=self.point_line_colour, width=2
+                )
 
         # Draw all points
         for i, (x, y) in enumerate(self.points, 1):
             # Determine point color (highlight if being dragged)
-            point_color = self.point_dragging_colour if (self.dragging and self.drag_point_index == i - 1) else self.point_colour
+            point_color = (
+                self.point_dragging_colour
+                if (self.dragging and self.drag_point_index == i - 1)
+                else self.point_colour
+            )
             point_outline = "black"
-            
+
             # Draw point circle
             self.canvas.create_oval(
                 x - self.point_radius,
