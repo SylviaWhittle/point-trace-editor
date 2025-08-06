@@ -29,6 +29,10 @@ class PointTraceEditor:
         self.drag_point_index = None
         self.drag_start_x = 0
         self.drag_start_y = 0
+        
+        # mouse position tracking for delete functionality
+        self.mouse_x = 0
+        self.mouse_y = 0
 
         # Create main frame - to hold all widgets
         main_frame = ttk.Frame(main_window, padding="10")
@@ -62,6 +66,12 @@ class PointTraceEditor:
         # Bind mouse motion and release for dragging
         self.canvas.bind("<B1-Motion>", self.on_canvas_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_canvas_release)
+        # Bind mouse motion to track cursor position
+        self.canvas.bind("<Motion>", self.on_mouse_move)
+        
+        # Make canvas focusable and bind keyboard events
+        self.canvas.focus_set()
+        self.canvas.bind("<Key>", self.on_key_press)
 
         # buttons frame
         buttons_frame = ttk.Frame(main_frame)
@@ -98,7 +108,7 @@ class PointTraceEditor:
 
         # Status bar
         self.status_var = tk.StringVar()
-        self.status_var.set("Ready - Click on the canvas to place points")
+        self.status_var.set("Ready - Click to place/drag points, press 'd' to delete point near cursor")
         status_bar = ttk.Label(
             main_frame, textvariable=self.status_var, relief="sunken", anchor="w"
         )
@@ -151,10 +161,32 @@ class PointTraceEditor:
             self.dragging = False
             self.drag_point_index = None
 
+    def on_mouse_move(self, event):
+        """Track mouse position for delete functionality."""
+        self.mouse_x = event.x
+        self.mouse_y = event.y
+
+    def on_key_press(self, event):
+        """Handle keyboard events."""
+        if event.keysym.lower() == 'd':
+            self.delete_point_at_mouse()
+
+    def delete_point_at_mouse(self):
+        """Delete point near the current mouse position."""
+        point_index = self.find_point_at_position(self.mouse_x, self.mouse_y)
+        
+        if point_index is not None:
+            deleted_point = self.points.pop(point_index)
+            self.redraw_canvas()
+            self.update_terminal()
+            self.status_var.set(f"Deleted point at ({deleted_point[0]}, {deleted_point[1]})")
+        else:
+            self.status_var.set("No point near mouse cursor to delete")
+
     def find_point_at_position(self, x, y):
         """Find if there's a point at the given position (within click radius)."""
         click_radius = self.point_radius + 5  # A bit larger than the visual radius
-        
+
         for i, (px, py) in enumerate(self.points):
             # Calculate distance from click to point center
             distance = ((x - px) ** 2 + (y - py) ** 2) ** 0.5
